@@ -12,21 +12,26 @@
 |---|---|
 | 一句话记账 | 输入「午饭12」「奶茶十五」「昨天打车38」「早饭八块五」，自动认金额 + 认分类 |
 | 一句话多笔 | 「午饭12，奶茶15，地铁4」一次落三条账 |
+| 补记旧账 | 输入框左边的日期按钮（默认「今」）点开选今天/昨天/…/6 天前，之后的几笔都落到那天；也可以直接长按输入框弹出。原话里写「昨天」「前天」优先于按钮 |
 | 聊天流 UI | 你的话是右边的粉色气泡，账目是左边角色发来的卡片，气泡点开可「修改分类 / 改金额 / 删除」 |
-| 按天分组 | 每条日期条一个块：「今天 花 ¥67」「昨天 花 ¥121 · 收 ¥8000」；点日期条可折叠整天 |
+| 按天分组 | 每条日期条一个块：「今天 花 ¥67」「昨天 花 ¥121 · 收 ¥8000」；点日期条可折叠整天，折叠状态会记住（下次打开还是收起的） |
 | 角色台词 | 默认沉默，只出账单卡片。仅三种情况说一句：分类没认出来、本月第一次超支、每类满第 10 笔。有「对方正在输入…」 |
 | 预算条 | 一行：本月花多少 / 剩多少 · 日均多少；超支变红。点它打开统计 |
-| 统计 | 总支出 / 总收入 / 结余 + 按分类排行 + **每天账单**（倒序，点某天展开当天每一笔） |
+| 统计 | **本周 / 本月 / 上月** 三个 tab；总支出 / 总收入 / 结余 + 按分类排行（**点一行展开该分类流水**）+ **每天账单**（倒序，点某天展开当天每一笔） |
+| 周报 | 每周第一次打开，角色发一句「上周花了 ¥100，比前一周少 ¥100，午餐最多」。同一周只发一次 |
 | 离线可用 | Service Worker 缓存，断网也能记 |
 | 数据自持 | 只写 localStorage，可导出/导入 JSON、导出 CSV，无账号、无上传 |
 | 防丢 | 每天首次打开自动留一份快照（`chatledger.v2.bakday`）；超 15 笔未导出、或距上次导出超 30 天，预算条右侧提示「该备份了」 |
+| CSV 导回 | 设置 →「导入 CSV（去重后追加）」，认自己导出的格式，也能吃别家账单；按「日期+时间+分类+金额」去重，导错了 4 秒内可撤销 |
 | 撤销 | 删除后 4 秒内点提示条可撤回 |
 | 快捷入口 | `?add=午饭12` 直接入账，可接 iOS 快捷指令 / 分享菜单 |
 | 可选接大模型 | 设置 → 进阶里填任意 OpenAI 兼容接口（DeepSeek 等），角色台词换成本人化生成；不填就是纯本地零成本 |
 
-![主页 · 按天分组](shot-1-home.png)
-![折叠一整天](shot-6-days.png)
-![统计 · 每天账单](shot-3-stats.png)
+| | |
+|---|---|
+| ![主页 · 按天分组](shot-1-home.png) | ![补记：选日期](shot-7-backdate.png) |
+| ![折叠一整天](shot-6-days.png) | ![统计 · 本周/本月/上月](shot-3-stats.png) |
+| ![分类下钻](shot-8-drill.png) | ![空态](shot-2-empty.png) |
 
 ---
 
@@ -43,7 +48,7 @@ chat-ledger/
 ├── apple-touch-icon.png  iOS 主屏幕图标（180×180）
 ├── README.md             本文件
 ├── 方案B-微信小程序与真人对话.md
-├── shot-*.png            截图（390×844 实机比例）
+├── shot-*.png            截图（390×844 实机比例，共 7 张）
 ├── serve.cmd             双击 = 局域网起服务，iPhone 同 WiFi 直接试玩
 ├── push.cmd / push.ps1   双击 = 一键建仓库 + 推送 + 开 GitHub Pages（要 gh 已登录）
 ├── push-git.cmd          双击 = 纯 git 推送，只问你要一个 PAT，不装任何东西
@@ -185,7 +190,11 @@ iPhone 连同一个 WiFi，用 **Safari** 打开这个地址，就能用。
 
 - 无构建、无依赖、无框架。改完直接刷新。
 - 数据结构：`localStorage["chatledger.v2"] = { settings:{budget,name,avatar,aiUrl,aiKey,aiModel}, entries:[{id,ts,amount,cat,emoji,income,conf,note}], msgs:[{id,ts,from,type,text|entryId}], seeded, lastOpen, snapDay, lastExport }`。
-- 按天分组靠三个纯函数：`dk(ts)` 出 `"Y-M-D"` 当分组键、`dayTotals(list)` 归并成 `{out,inc,n}`、`dayHeadHtml(k,o)` 出日期条；折叠状态在内存对象 `_fold[k]` 里，不落盘（刷新后全展开）。
+- 按天分组靠三个纯函数：`dk(ts)` 出 `"Y-M-D"` 当分组键、`dayTotals(list)` 归并成 `{out,inc,n,all}`（`n` 只数支出笔数，`all` 收支都算）、`dayHeadHtml(k,o)` 出日期条；折叠状态存在 `_fold`（初始化自 `S.fold`），每次点击都写回 `S.fold` 并 `save()`，所以刷新后仍然收起。
+- 补记：`var _dayOff`（0～6）是全局记账日期偏移，`syncDayBtn()` 同步按钮外观，`openDayPicker()` 出弹层；`addBatch(list, rawText)` 开头 `var off = list.every(p=>!p.hasD) ? _dayOff : 0` —— 只要有一笔的原话自带「昨天/前天/大前天」（`parse()` 返回的 `hasD`），就整批按原话算，按钮偏移让位；落完账 `_dayOff` 归零。
+- 统计范围：`scopeRange(sc)` 返回 `{from,to,label}`，`sc` 取 `week`（本周一起）/ `month`（本月 1 号）/ `last`（上月整月）；分类下钻是 `.citem2` 行 + 紧随其后的 `.crows[data-cat]` 明细容器，点行切 `hidden`。
+- CSV 导回：`csvCells(line)` 是手写的引号感知切分（支持 `""` 转义），`catOf(name)` 把分类名映射回 `CATS`，`parseCsv(text)` 返回 `{add,dup,bad}` 不动 `S`，由设置页确认后再 `concat` 进 `S.entries`。去重键是 `dk+" "+hm+" "+cat+" "+amount.toFixed(2)`。
+- 周报：`weekStartMs()` 给本周一 0 点，`weeklyReport()` 拿上周和上上周比，同一周只看 `S.wkSaid` 是否等于本周一的日期键。
 - 解析入口 `parse(text)`（单句）与 `parseAll(text)`（按 `，。；、\n` 切多句，任一句没金额就跳过）；记账 `addBatch(list, rawText)`；台词入口 `reply(entry)`；渲染 `render()`；统计 `openStats()`。
 - 台词走「静默优先」：`reply(entry)` 绝大多数情况返回空字符串，于是 `addEntry` 不出打字动画、不推文本气泡，只落一张账单卡片。只有三种情况返回非空：`conf<0.7`（分类是猜的）、本月首次 `left<0`（用 `S.oversaid` 记录当月只说一次）、同类第 10 笔。要加台词就往 `reply()` 里加 return 分支。
 - 加分类只需往 `CATS` 里加 `{k,e,ws:[]}`；`income:true` 表示收入类。

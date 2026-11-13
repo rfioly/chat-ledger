@@ -107,6 +107,25 @@ header button.dot::after{content:"";position:absolute;top:7px;right:7px;width:6p
 .bub.typing i:nth-child(3){animation-delay:.36s}
 @keyframes tk{0%,60%,100%{opacity:.35;transform:translateY(0)}30%{opacity:1;transform:translateY(-2px)}}
 .msg.sys .bub.time{font-size:11.5px;letter-spacing:.2px}
+/* 记账日期按钮（长按输入框也能唤出） */
+.inrow .dbtn{flex:0 0 auto;width:36px;height:36px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--sub);font-size:12px;font-weight:600;padding:0;cursor:pointer;line-height:1}
+.inrow .dbtn.on{background:var(--warn);border-color:var(--warn);color:#fff}
+/* 统计弹层的时间范围切换 */
+.tabs{display:flex;gap:6px;margin:0 0 12px}
+.tabs button{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:7px 0;font-size:13px;color:var(--sub);cursor:pointer;font-weight:500}
+.tabs button.sel{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+/* 分类点开后的流水 */
+.stats .citem2{display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer;border-radius:8px}
+.stats .citem2:active{background:var(--bg)}
+.stats .citem2 .d{width:84px;color:var(--sub);font-size:12.5px;flex:0 0 84px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stats .citem2 .b{flex:1;height:14px;background:var(--bg);border-radius:4px;overflow:hidden}
+.stats .citem2 .b i{display:block;height:100%;background:linear-gradient(90deg,#ffc2cf,var(--accent));border-radius:4px}
+.stats .citem2 .v{width:62px;text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
+.stats .crows{padding:0 0 8px}
+.stats .citem{display:flex;align-items:baseline;gap:8px;padding:5px 8px;font-size:12.5px;color:var(--sub)}
+.stats .citem .dt2{flex:0 0 42px;font-variant-numeric:tabular-nums}
+.stats .citem .am2{font-variant-numeric:tabular-nums;color:var(--bad);font-weight:600}
+.stats .citem .am2.in{color:var(--ok)}
 /* 每天一块：日期 + 当天合计，点一下收起这一天的消息 */
 .dayhead{display:flex;align-items:center;justify-content:center;gap:8px;margin:16px auto 9px;padding:3px 10px;font-size:11.5px;color:var(--sub);cursor:pointer;user-select:none;max-width:max-content;border-radius:12px}
 .dayhead:active{background:var(--line)}
@@ -148,6 +167,7 @@ header button.dot::after{content:"";position:absolute;top:7px;right:7px;width:6p
   <footer>
     <div class="chips" id="chips"></div>
     <div class="inrow">
+      <button class="dbtn" id="btnDay" aria-label="选择记账日期">今</button>
       <input id="inp" placeholder="说一句，比如 午饭12" autocomplete="off" enterkeyhint="send">
       <button id="send">发送</button>
     </div>
@@ -239,11 +259,12 @@ function parse(text){
   var pc=pickCat(text);
   var amount=pickAmount(text,!!pc.hit);
   if(!amount)return null;
-  var ts=Date.now();
-  if(text.indexOf("昨天")>-1)ts-=86400000;
-  else if(text.indexOf("前天")>-1)ts-=172800000;
+  var ts=Date.now(),hasD=0;
+  if(text.indexOf("昨天")>-1){ts-=86400000;hasD=1;}
+  else if(text.indexOf("前天")>-1){ts-=172800000;hasD=1;}
+  else if(text.indexOf("大前天")>-1){ts-=259200000;hasD=1;}
   var inc=pc.c.income||text.indexOf("收入")>-1||text.indexOf("+)")>-1;
-  return {amount:amount,cat:pc.c.k,emoji:pc.c.e,conf:pc.conf,ts:ts,income:!!inc,note:text.trim()};
+  return {amount:amount,cat:pc.c.k,emoji:pc.c.e,conf:pc.conf,ts:ts,hasD:hasD,income:!!inc,note:text.trim()};
 }
 /* 一句话多笔：只有「每一段都能独立解析出金额」时才拆，拆不动就退回整句 */
 function parseAll(text){
@@ -270,11 +291,17 @@ function addEntry(p){ addBatch([p], p.note); }
 /* 一次可能记多笔：合并成一条用户原话 + 多张卡片，只回一句话 */
 function addBatch(list,rawText){
   if(!list||!list.length)return;
-  var sm={id:uid(),ts:Date.now(),from:"me",type:"text",text:rawText};
+  /* 补记：整段（原话气泡 + 卡片）一起落到那一天，别把一段对话劈成两个日块 */
+  var off=list.every(function(p){return !p.hasD;})?_dayOff:0;
+  var base=Date.now()-off*86400000;
+  var sm={id:uid(),ts:base,from:"me",type:"text",text:rawText};
   S.msgs.push(sm);
   var es=[];
   list.forEach(function(p){
-    var e={id:uid(),ts:p.ts,amount:Math.round(p.amount*100)/100,cat:p.cat,emoji:p.emoji,income:p.income,conf:p.conf,note:p.note,srcMsg:sm.id};
+    var ts=p.ts||Date.now();
+    /* 原话里没写「昨天/前天」时，才套用底部日期按钮选的补记日期 */
+    if(!p.hasD&&off>0)ts-=off*86400000;
+    var e={id:uid(),ts:ts,amount:Math.round(p.amount*100)/100,cat:p.cat,emoji:p.emoji,income:p.income,conf:p.conf,note:p.note,srcMsg:sm.id};
     S.entries.push(e);es.push(e);
   });
   save();render();
@@ -283,8 +310,9 @@ function addBatch(list,rawText){
   for(var i=0;i<es.length;i++){var t=reply(es[i]);if(t){local=t;break;}}
   function push(txt){
     typing(false);
-    es.forEach(function(e){S.msgs.push({id:uid(),ts:Date.now(),from:"bot",type:"entry",entryId:e.id});});
-    if(txt)S.msgs.push({id:uid(),ts:Date.now()+1,from:"bot",type:"text",text:txt});
+    es.forEach(function(e){S.msgs.push({id:uid(),ts:base+1,from:"bot",type:"entry",entryId:e.id});});
+    if(txt)S.msgs.push({id:uid(),ts:base+2,from:"bot",type:"text",text:txt});
+    if(off>0){_dayOff=0;syncDayBtn();}
     save();render();
   }
   if(!wantAI&&!local){push("");return;}
@@ -340,6 +368,39 @@ function nudge(){
   S.msgs.push({id:uid(),ts:now,from:"bot",type:"text",text:pool[Math.floor(Math.random()*pool.length)]});
   save();
 }
+/* ---------- 周报：一周过完第一次打开，角色主动说一句 ---------- */
+function weekStartMs(d){
+  var x=new Date(d.getFullYear(),d.getMonth(),d.getDate());
+  x.setDate(x.getDate()-((x.getDay()+6)%7));x.setHours(0,0,0,0);
+  return x.getTime();
+}
+function weeklyReport(){
+  var ws=weekStartMs(new Date());
+  var key=dk(ws);
+  if(S.wkSaid===key)return "";
+  var pw=ws-7*86400000,ppw=pw-7*86400000;
+  var prev=S.entries.filter(function(e){return !e.income&&e.ts>=pw&&e.ts<ws;});
+  if(!prev.length){return "";}
+  S.wkSaid=key;
+  var a=sum(prev);
+  var before=S.entries.filter(function(e){return !e.income&&e.ts>=ppw&&e.ts<pw;});
+  var b=before.length?sum(before):0;
+  var days={};prev.forEach(function(e){days[dk(e.ts)]=1;});
+  var nDay=Object.keys(days).length;
+  var t;
+  if(b<=0){t="上周花了 "+money(a)+"，记了 "+nDay+" 天";}
+  else{
+    var d=Math.round(Math.abs(a-b)*100)/100;
+    if(d<1){t="上周花了 "+money(a)+"，跟前一周差不多";}
+    else if(a<b){t="上周花了 "+money(a)+"，比前一周少 "+money(d);}
+    else{t="上周花了 "+money(a)+"，比前一周多 "+money(d);}
+  }
+  var byCat={};
+  prev.forEach(function(e){byCat[e.cat]=(byCat[e.cat]||0)+e.amount;});
+  var top=Object.keys(byCat).sort(function(x,y){return byCat[y]-byCat[x];})[0];
+  if(top&&nDay>=2)t+="，"+(top==="其他"?"花得最多的是杂项":top)+"最多";
+  return t;
+}
 function monthEntries(){var d=new Date(),y=d.getFullYear(),m=d.getMonth();
   return S.entries.filter(function(e){var t=new Date(e.ts);return t.getFullYear()===y&&t.getMonth()===m;});}
 function sum(list){return list.reduce(function(a,e){return a+(e.income?-e.amount:e.amount);},0);}
@@ -389,7 +450,8 @@ function renderSummary(){
 function dk(ts){var d=new Date(ts);return d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();}
 function dayTotals(list){
   var m={};(list||S.entries).forEach(function(e){
-    var k=dk(e.ts),o=m[k]||(m[k]={out:0,inc:0,n:0});
+    var k=dk(e.ts),o=m[k]||(m[k]={out:0,inc:0,n:0,all:0});
+    o.all++;
     if(e.income)o.inc+=e.amount;else{o.out+=e.amount;o.n++;}
   });return m;
 }
@@ -412,7 +474,7 @@ function dayHeadHtml(k,o){
   return '<div class="dayhead" data-day="'+k+'"><span class="dl">'+dayName(k)+'</span>'+
     (t?'<span class="dt">'+t+'</span>':'')+'<span class="cv">▼</span></div>';
 }
-var _fold={};
+var _fold=(S.fold||{});
 function hm(ts){var d=new Date(ts);return ("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);}
 function render(){
   var st=document.getElementById("stream");var h="";var last=0,lastDay="";
@@ -460,6 +522,7 @@ function render(){
     if(_fold[k])el.classList.add("folded");
     el.addEventListener("click",function(){
       _fold[k]=!_fold[k];var on=_fold[k];
+      S.fold=_fold;save();
       if(on)el.classList.add("folded");else el.classList.remove("folded");
       st.querySelectorAll(".msg").forEach(function(x){
         if(x.dataset.day!==k)return;
@@ -539,8 +602,8 @@ function openAmtEdit(id){
   setTimeout(function(){try{inp.focus();inp.select();}catch(x){}},60);
 }
 /* 某一天的明细，点每天账单那行展开 */
-function dayItemsHtml(k){
-  var list=S.entries.filter(function(e){return dk(e.ts)===k;})
+function dayItemsHtml(k,src){
+  var list=(src||S.entries).filter(function(e){return dk(e.ts)===k;})
     .sort(function(a,b){return a.ts-b.ts;});
   if(!list.length)return "";
   return list.map(function(e){
@@ -551,28 +614,57 @@ function dayItemsHtml(k){
       '<span class="am '+(e.income?"in":"out")+'">'+(e.income?"+":"-")+money(e.amount)+'</span></div>';
   }).join("");
 }
-function openStats(){
-  var me=monthEntries().filter(function(x){return !x.income;});
-  var byCat={};me.forEach(function(e){byCat[e.cat]=(byCat[e.cat]||0)+e.amount;});
-  var arr=Object.keys(byCat).map(function(k){return [k,byCat[k]];}).sort(function(a,b){return b[1]-a[1];});
-  var total=sum(me);
-  var all=monthEntries();
-  var inc=sumIn(all);
-  var h='<h3>本月账单<button id="stClose">关闭</button></h3>';
+/* 统计弹层的时间范围：本周 / 本月 / 上月 */
+var _scope="month";
+function scopeRange(sc){
+  var now=new Date(),from,to=now.getTime(),label;
+  if(sc==="week"){
+    var wd=(now.getDay()+6)%7;
+    var s=new Date(now.getFullYear(),now.getMonth(),now.getDate()-wd);
+    from=s.getTime();label="本周";
+  }else if(sc==="last"){
+    var s2=new Date(now.getFullYear(),now.getMonth()-1,1);
+    from=s2.getTime();
+    to=new Date(now.getFullYear(),now.getMonth(),1).getTime()-1;
+    label="上月";
+  }else{
+    from=new Date(now.getFullYear(),now.getMonth(),1).getTime();label="本月";
+  }
+  return {from:from,to:to,label:label};
+}
+function openStats(sc){
+  if(sc)_scope=sc;
+  var rg=scopeRange(_scope);
+  var all=S.entries.filter(function(e){return e.ts>=rg.from&&e.ts<=rg.to;})
+    .sort(function(a,b){return a.ts-b.ts;});
+  var cost=all.filter(function(x){return !x.income;});
+  var byCat={};
+  cost.forEach(function(e){var o=byCat[e.cat]||(byCat[e.cat]={sum:0,e:e});o.sum+=e.amount;});
+  var arr=Object.keys(byCat).map(function(k){return [k,byCat[k].sum,byCat[k].e.emoji];}).sort(function(a,b){return b[1]-a[1];});
+  var total=sum(cost),inc=sumIn(all);
+  var h='<h3>'+rg.label+'账单<button id="stClose">关闭</button></h3>';
+  h+='<div class="tabs">'+
+    ['week','month','last'].map(function(k){
+      var nm={week:"本周",month:"本月",last:"上月"}[k];
+      return '<button data-scope="'+k+'" class="'+(k===_scope?"sel":"")+'">'+nm+'</button>';
+    }).join("")+"</div>";
   h+='<div class="field"><span>总支出</span><b>'+money(total)+"</b></div>";
   if(inc>0){
     h+='<div class="field"><span>总收入</span><b style="color:var(--ok)">+'+money(inc)+"</b></div>";
     h+='<div class="field"><span>结余</span><b>'+(inc-total>=0?"+":"")+money(inc-total)+"</b></div>";
   }
-  if(!all.length){h+='<div class="empty">这个月还没记账</div>';}
+  if(!all.length){h+='<div class="empty">这段时间还没记账</div>';}
+  else if(!arr.length){h+='<div class="empty" style="padding:10px 0 2px">这段时间只有收入，没有支出</div>';}
   else{
-    if(!arr.length){h+='<div class="empty" style="padding:10px 0 2px">这个月只有收入，没有支出</div>';}
-    else{
-    h+='<div style="margin:14px 0 8px;font-size:12px;color:var(--sub)">按分类</div><div class="stats">';
-    arr.forEach(function(a){h+='<div class="day"><div class="d">'+a[0]+'</div><div class="b"><i style="width:'+(a[1]/arr[0][1]*100)+'%"></i></div><div class="v">'+money(a[1])+"</div></div>";});
+    h+='<div style="margin:14px 0 8px;font-size:12px;color:var(--sub)">按分类 · 点一行看明细</div><div class="stats">';
+    arr.forEach(function(a){
+      h+='<div class="citem2" data-cat="'+esc(a[0])+'"><div class="d">'+a[2]+' '+esc(a[0])+'</div><div class="b"><i style="width:'+(a[1]/arr[0][1]*100)+'%"></i></div><div class="v">'+money(a[1])+'</div></div>'+
+        '<div class="crows" data-cat="'+esc(a[0])+'" hidden>'+catRowsHtml(a[0],all)+'</div>';
+    });
     h+="</div>";
-    }
-    /* 每天账单：本月每一天一行，最新的在最上面；点一行展开当天明细 */
+  }
+  /* 每天账单：范围内每一天一行，最新的在最上面 */
+  if(all.length){
     var dtm=dayTotals(all);
     var ks=Object.keys(dtm).sort(function(a,b){
       var pa=a.split("-"),pb=b.split("-");
@@ -581,15 +673,25 @@ function openStats(){
     h+='<div style="margin:16px 0 6px;font-size:12px;color:var(--sub)">每天账单 · '+ks.length+' 天</div><div class="stats">';
     ks.forEach(function(k){
       var o=dtm[k];
-      h+='<div class="drow" data-day="'+k+'"><b>'+dayName(k)+'</b><span class="cnt">'+o.n+' 笔</span>'+
+      h+='<div class="drow" data-day="'+k+'"><b>'+dayName(k)+'</b><span class="cnt">'+o.all+' 笔</span>'+
         '<span class="out">'+(o.out>0?money(o.out):"—")+'</span>'+
         (o.inc>0?'<span class="inc">+'+money(o.inc)+'</span>':'')+'</div>'+
-        '<div class="ditems" data-day="'+k+'" hidden>'+dayItemsHtml(k)+'</div>';
+        '<div class="ditems" data-day="'+k+'" hidden>'+dayItemsHtml(k,all)+'</div>';
     });
     h+="</div>";
   }
   panel.innerHTML=h;sheet.classList.add("on");
   panel.querySelector("#stClose").onclick=closeSheet;
+  panel.querySelectorAll(".tabs button").forEach(function(b){
+    b.onclick=function(){openStats(b.dataset.scope);};
+  });
+  panel.querySelectorAll(".citem2").forEach(function(row){
+    row.addEventListener("click",function(){
+      var c=row.dataset.cat,box=null;
+      panel.querySelectorAll(".crows").forEach(function(x){if(x.dataset.cat===c)box=x;});
+      if(box)box.hidden=!box.hidden;
+    });
+  });
   panel.querySelectorAll(".drow").forEach(function(row){
     row.addEventListener("click",function(){
       var k=row.dataset.day,box=null;
@@ -597,6 +699,17 @@ function openStats(){
       if(box)box.hidden=!box.hidden;
     });
   });
+}
+/* 某个分类在这个范围内的流水 */
+function catRowsHtml(cat,list){
+  var l=list.filter(function(e){return e.cat===cat;}).sort(function(a,b){return b.ts-a.ts;});
+  if(!l.length)return "";
+  return l.map(function(e){
+    var d=new Date(e.ts);
+    return '<div class="citem"><span class="dt2">'+(d.getMonth()+1)+"/"+d.getDate()+'</span>'+
+      '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.note||e.cat)+'</span>'+
+      '<span class="am2 '+(e.income?"in":"")+'">'+(e.income?"+":"-")+money(e.amount)+'</span></div>';
+  }).join("");
 }
 function openSettings(){
   var h='<h3>设置<button id="setClose">完成</button></h3>';
@@ -612,7 +725,8 @@ function openSettings(){
   h+='</details>';
   h+='<button class="btn2" id="fExport">导出备份（JSON）</button>';
   h+='<button class="btn2" id="fCsv">导出 CSV（Excel 打开）</button>';
-  h+='<button class="btn2" id="fImport">导入备份</button>';
+  h+='<button class="btn2" id="fCsvIn">导入 CSV（去重后追加）</button>';
+  h+='<button class="btn2" id="fImport">导入备份（JSON）</button>';
   var bakN=backupCount();
   if(bakN)h+='<button class="btn2" id="fRestore">恢复昨天的自动备份（'+bakN+' 笔）</button>';
   h+='<button class="btn2" id="fClear" style="color:var(--bad)">清空全部数据</button>';
@@ -659,6 +773,31 @@ function openSettings(){
       if(d&&d.entries){S=d;save();bootstrap();render();closeSheet();toast("已恢复到昨天");}
     }catch(e){toast("备份读不了");}
   };
+  panel.querySelector("#fCsvIn").onclick=function(){
+    var inp=document.createElement("input");inp.type="file";inp.accept=".csv,text/csv";
+    inp.onchange=function(){
+      var f=inp.files[0];if(!f)return;
+      var r=new FileReader();
+      r.onload=function(){
+        var res;
+        try{res=parseCsv(r.result);}catch(e){toast("这个文件读不了");return;}
+        if(!res.add.length){
+          toast(res.dup?("都是已有的记录（"+res.dup+" 条重复）"):"没找到能导入的行");
+          return;
+        }
+        var tip="导入 "+res.add.length+" 笔"+(res.dup?"，跳过重复 "+res.dup:"")+(res.bad?"，格式不对 "+res.bad:"");
+        if(!confirm(tip+"。继续？"))return;
+        S.entries=S.entries.concat(res.add);
+        save();render();closeSheet();
+        toast("已导入 "+res.add.length+" 笔","撤销",function(){
+          S.entries=S.entries.filter(function(e){
+            return !res.add.some(function(x){return x.id===e.id;});});
+          save();render();
+        });
+      };
+      r.readAsText(f);
+    };
+    inp.click();};
   panel.querySelector("#fImport").onclick=function(){
     var inp=document.createElement("input");inp.type="file";inp.accept="application/json";
     inp.onchange=function(){var f=inp.files[0];if(!f)return;var r=new FileReader();
@@ -671,10 +810,87 @@ function openSettings(){
 function backupCount(){
   try{var d=JSON.parse(localStorage.getItem(KEY+".bak")||"null");return d&&d.entries?d.entries.length:0;}catch(e){return 0;}
 }
+/* ---------- CSV 导回：跟导出的格式对齐，也能吃别人给的账单 ---------- */
+function csvCells(line){
+  var out=[],cur="",q=false;
+  for(var i=0;i<line.length;i++){
+    var c=line[i];
+    if(q){
+      if(c==='"'){if(line[i+1]==='"'){cur+='"';i++;}else q=false;}
+      else cur+=c;
+    }else{
+      if(c==='"')q=true;
+      else if(c===","){out.push(cur);cur="";}
+      else cur+=c;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+function catOf(name){
+  for(var i=0;i<CATS.length;i++){if(CATS[i].k===name)return CATS[i];}
+  return CATS[15];
+}
+/* 返回 {add:[],dup:n,bad:n}，不直接落到 S 里，先给用户看数 */
+function parseCsv(text){
+  var lines=String(text).replace(/^\ufeff/,"").split(/\r\n|\n|\r/).filter(function(x){return x.trim();});
+  var add=[],dup=0,bad=0;
+  var seen={};
+  S.entries.forEach(function(e){
+    var d=new Date(e.ts);
+    seen[dk(e.ts)+" "+hm(e.ts)+" "+e.cat+" "+e.amount.toFixed(2)]=1;
+  });
+  lines.forEach(function(line,idx){
+    var c=csvCells(line);
+    if(idx===0&&!/^\d{4}/.test((c[0]||"").trim()))return; /* 表头 */
+    var dm=(c[0]||"").trim().match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if(!dm){bad++;return;}
+    var amt=parseFloat(String(c[3]||"").replace(/[^\d.-]/g,""));
+    if(!isFinite(amt)||amt<=0){bad++;return;}
+    var tm=(c[1]||"").trim().match(/(\d{1,2}):(\d{1,2})/);
+    var d=new Date(+dm[1],+dm[2]-1,+dm[3],tm?+tm[1]:12,tm?+tm[2]:0,0,0);
+    var cat=catOf((c[2]||"").trim());
+    var income=/收入|income/i.test((c[4]||"").trim())||cat.income;
+    var note=(c[5]||"").trim()||cat.k;
+    var k=dk(d.getTime())+" "+hm(d.getTime())+" "+cat.k+" "+amt.toFixed(2);
+    if(seen[k]){dup++;return;}
+    seen[k]=1;
+    add.push({id:uid(),ts:d.getTime(),amount:Math.round(amt*100)/100,cat:cat.k,emoji:cat.e,income:!!income,conf:1,note:note});
+  });
+  return {add:add,dup:dup,bad:bad};
+}
 function needBackup(){
   if(!S.entries.length)return false;
   if(!S.lastExport)return S.entries.length>=15;
   return Date.now()-S.lastExport>30*86400000;
+}
+/* ---------- 补记：底部日期按钮 ---------- */
+var _dayOff=0;
+var DAY_LBL=["今","昨","前","3日"];
+function syncDayBtn(){
+  var b=document.getElementById("btnDay");if(!b)return;
+  b.textContent=DAY_LBL[_dayOff]||(_dayOff+"日");
+  b.className="dbtn"+(_dayOff?" on":"");
+  b.title=_dayOff?("补记 "+(DAY_LBL[_dayOff]||_dayOff+"天前")):"记今天";
+}
+function openDayPicker(){
+  var opts=[[0,"今天"],[1,"昨天"],[2,"前天"],[3,"3 天前"],[4,"4 天前"],[5,"5 天前"],[6,"6 天前"]];
+  var h='<h3>记到哪一天<button id="dClose">取消</button></h3><div class="grid" style="grid-template-columns:repeat(4,1fr)">';
+  opts.forEach(function(o){
+    var d=new Date();d.setDate(d.getDate()-o[0]);
+    h+='<button data-off="'+o[0]+'" class="'+(_dayOff===o[0]?"sel":"")+'"><span>'+(o[0]===0?"📅":"🗓")+'</span><span>'+o[1]+'</span><span style="font-size:10px;opacity:.6">'+(d.getMonth()+1)+"/"+d.getDate()+'</span></button>';
+  });
+  h+="</div>";
+  h+='<div style="margin-top:14px;font-size:11.5px;color:var(--sub);line-height:1.6">选定之后再用底部输入框记账，这一笔就会落到那天。原话里写「昨天」「前天」也认，写得比按钮更准。</div>';
+  panel.innerHTML=h;sheet.classList.add("on");
+  panel.querySelector("#dClose").onclick=function(){closeSheet();};
+  panel.querySelectorAll(".grid button").forEach(function(b){
+    b.onclick=function(){
+      _dayOff=+b.dataset.off;syncDayBtn();closeSheet();
+      var i=document.getElementById("inp");
+      if(i)i.focus();
+    };
+  });
 }
 /* ---------- 输入 ---------- */
 function submit(){
@@ -690,6 +906,15 @@ document.getElementById("send").onclick=submit;
 document.getElementById("inp").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();submit();}});
 document.getElementById("summary").onclick=openStats;
 document.getElementById("btnSet").onclick=openSettings;
+document.getElementById("btnDay").onclick=openDayPicker;
+/* 长按输入框也能唤出日期选择：iPhone 上比点小按钮顺手 */
+(function(){
+  var i=document.getElementById("inp"),t=0;
+  i.addEventListener("touchstart",function(){t=setTimeout(function(){t=0;openDayPicker();},550);},{passive:true});
+  ["touchend","touchmove","touchcancel"].forEach(function(k){
+    i.addEventListener(k,function(){if(t){clearTimeout(t);t=0;}},{passive:true});});
+  i.addEventListener("contextmenu",function(e){e.preventDefault();openDayPicker();});
+})();
 var CHIPS=["午饭12","奶茶15","地铁4","打车23","超市68","工资8000"];
 document.getElementById("chips").innerHTML=CHIPS.map(function(c){return "<button>"+c+"</button>";}).join("");
 document.getElementById("chips").addEventListener("click",function(e){
@@ -707,7 +932,10 @@ function bootstrap(){
   var q=new URLSearchParams(location.search).get("add");
   if(q){var ps=parseAll(decodeURIComponent(q));if(ps.length){addBatch(ps,decodeURIComponent(q));var u=location.pathname;history.replaceState({},"",u);}}
 })();
-bootstrap();nudge();render();
+bootstrap();syncDayBtn();
+var _wk=weeklyReport();
+if(_wk){S.msgs.push({id:uid(),ts:Date.now()-500,from:"bot",type:"text",text:_wk});save();}
+nudge();render();
 /* iOS 键盘弹起时把消息流顶上来，别挡住输入框 */
 if(window.visualViewport){
   visualViewport.addEventListener("resize",function(){
