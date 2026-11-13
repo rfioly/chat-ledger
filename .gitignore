@@ -1,0 +1,15 @@
+# 系统垃圾
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地临时文件
+_*
+*.log
+*.tmp
+node_modules/
+.venv/
+
+# 编辑器
+.vscode/
+.idea/
