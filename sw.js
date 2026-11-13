@@ -1,5 +1,5 @@
 /* 聊记 Service Worker —— 离线可用；页面走「先网络后缓存」，改完文件刷新就能看到新版 */
-const CACHE = 'chatledger-v4';
+const CACHE = 'chatledger-v5';
 const ASSETS = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', (e) => {

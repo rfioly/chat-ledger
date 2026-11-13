@@ -134,8 +134,8 @@ var CATS=[
  {k:"饮品",e:"🥤",ws:["奶茶","咖啡","瑞幸","星巴克","可乐","柠檬茶","果汁","蜜雪","喜茶","霸王茶姬","茶百道","纯茶"]},
  {k:"零食",e:"🍪",ws:["零食","薯片","巧克力","饼干","水果","西瓜","苹果","香蕉","冰淇淋","雪糕","蛋糕","面包"]},
  {k:"交通",e:"🚇",ws:["打车","滴滴","地铁","公交","高铁","火车","加油","停车","机票","单车","顺风车"]},
- {k:"日用",e:"🧻",ws:["抽纸","纸巾","日用","洗发水","牙膏","洗衣液","超市","便利店","垃圾袋","沐浴露"]},
- {k:"购物",e:"🛍️",ws:["衣服","鞋","淘宝","京东","拼多多","网购","快递","化妆品","护肤品","耳机"]},
+ {k:"日用",e:"🧻",ws:["抽纸","纸巾","日用","洗发水","牙膏","洗衣液","超市","便利店","垃圾袋","沐浴露","秤","体重秤","收纳","拖把","台灯","垃圾桶"]},
+ {k:"购物",e:"🛍️",ws:["衣服","鞋","淘宝","京东","拼多多","网购","快递","化妆品","护肤品","耳机","壳","保护壳","手机壳","平板","充电","数据线","充电器","配件","键盘","鼠标","显示器","家电","手表","眼镜"]},
  {k:"居住",e:"🏠",ws:["房租","水电","燃气","物业","电费","水费"]},
  {k:"通讯",e:"📱",ws:["话费","流量","宽带","会员","订阅","网费","iCloud"]},
  {k:"娱乐",e:"🎮",ws:["电影","游戏","KTV","门票","演出","充值","皮肤","桌游","演唱会"]},
@@ -177,11 +177,21 @@ function pickAmount(text,catHit){
 function pickCat(text){
   for(var i=0;i<CATS.length;i++){var c=CATS[i];
     for(var j=0;j<c.ws.length;j++){if(text.indexOf(c.ws[j])>-1)return{c:c,hit:c.ws[j],conf:0.9};}}
-  var h=new Date().getHours();
-  if(h<10)return{c:CATS[0],hit:null,conf:0.5};
-  if(h<15)return{c:CATS[1],hit:null,conf:0.5};
-  if(h<22)return{c:CATS[2],hit:null,conf:0.5};
-  return{c:CATS[15],hit:null,conf:0.4};}
+  /* 没命中关键词：只有「几乎就是个金额」时才按时段猜，带实义字的（如「平板保护壳」）一律记成「其他」 */
+  var rest=text
+    .replace(/[0-9]+(?:\.[0-9]{1,2})?/g,"")
+    .replace(/[零〇一二两三四五六七八九十百千万]+/g,"")
+    .replace(/块钱|块|元|角|毛|RMB|¥/g,"")
+    .replace(/昨天|前天|今早|今天|刚才|上午|下午|中午|早上|晚上|凌晨|夜里|夜宵|早餐时间/g,"")
+    .replace(/[\s,，。.!！?？、~～\-+\/]/g,"");
+  if(!rest.length){
+    var h=new Date().getHours();
+    if(h<5)return{c:CATS[2],hit:"amount",conf:0.6};
+    if(h<10)return{c:CATS[0],hit:"amount",conf:0.75};
+    if(h<15)return{c:CATS[1],hit:"amount",conf:0.75};
+    return{c:CATS[2],hit:"amount",conf:0.75};
+  }
+  return{c:CATS[15],hit:null,conf:0.45};}
 function parse(text){
   var pc=pickCat(text);
   var amount=pickAmount(text,!!pc.hit);
@@ -195,25 +205,24 @@ function parse(text){
 /* ---------- 记账 ---------- */
 var TYPING_MS=520;
 function addEntry(p){
-  var e={id:uid(),ts:p.ts,amount:Math.round(p.amount*100)/100,cat:p.cat,emoji:p.emoji,income:p.income,note:p.note};
+  var e={id:uid(),ts:p.ts,amount:Math.round(p.amount*100)/100,cat:p.cat,emoji:p.emoji,income:p.income,conf:p.conf,note:p.note};
   S.entries.push(e);
   S.msgs.push({id:uid(),ts:Date.now(),from:"me",type:"text",text:p.note});
-  save();render();typing(true);
-  setTimeout(function(){
+  save();render();
+  var wantAI=aiOn();
+  var local=reply(e);
+  function push(txt){
     typing(false);
     S.msgs.push({id:uid(),ts:Date.now(),from:"bot",type:"entry",entryId:e.id});
-    var local=reply(e);
-    if(aiOn()){
-      typing(true);
-      aiLine(e,function(txt){
-        typing(false);
-        S.msgs.push({id:uid(),ts:Date.now()+1,from:"bot",type:"text",text:txt||local});
-        save();render();
-      });
-      save();render();return;
-    }
-    if(local)S.msgs.push({id:uid(),ts:Date.now()+1,from:"bot",type:"text",text:local});
+    if(txt)S.msgs.push({id:uid(),ts:Date.now()+1,from:"bot",type:"text",text:txt});
     save();render();
+  }
+  /* 本地模式且没什么非说不可的 —— 直接出账单，不刷评价 */
+  if(!wantAI&&!local){push("");return;}
+  typing(true);
+  setTimeout(function(){
+    if(wantAI){aiLine(e,function(t){push(t||local);});return;}
+    push(local);
   },TYPING_MS);
 }
 /* 微信式「对方正在输入…」 */
@@ -266,67 +275,20 @@ function monthEntries(){var d=new Date(),y=d.getFullYear(),m=d.getMonth();
   return S.entries.filter(function(e){var t=new Date(e.ts);return t.getFullYear()===y&&t.getMonth()===m;});}
 function sum(list){return list.reduce(function(a,e){return a+(e.income?-e.amount:e.amount);},0);}
 /* ---------- 角色台词 ---------- */
-/* 台词引擎：按条件分层抽，且避开上一句，避免复读 */
-/* 最近 3 句都用过的台词不再复用，降复读 */
-function recentBotTexts(){
-  var out=[];
-  for(var i=S.msgs.length-1;i>=0&&out.length<3;i--){var m=S.msgs[i];
-    if(m.from==="bot"&&m.type==="text")out.push(m.text);}
-  return out;
-}
-function pick(pool){
-  if(!pool.length)return "";
-  var recent=recentBotTexts();
-  var f=pool.filter(function(t){return recent.indexOf(t)<0;});
-  if(!f.length)f=pool.filter(function(t){return t!==recent[0];});
-  if(!f.length)f=pool;
-  return f[Math.floor(Math.random()*f.length)];
-}
-/* 有情绪的条件台词只占四成，其余走平实的记账确认，避免句句都在演 */
-function pickMix(hot,cold){
-  var useHot=hot.length&&Math.random()<0.4;
-  return pick(useHot?hot:cold);
-}
-function todayOut(){
-  var t0=new Date();t0.setHours(0,0,0,0);
-  return sum(S.entries.filter(function(e){return e.ts>=t0.getTime()&&!e.income;}));
-}
-function todayN(){return S.entries.filter(function(e){return new Date(e.ts).toDateString()===new Date().toDateString();}).length;}
+/* 原则：记账只出账单卡片，不刷评价。只在用户真需要知道时才说一句。 */
 function reply(e){
+  if(e.income)return "";
   var me=monthEntries().filter(function(x){return !x.income;});
-  var catN=me.filter(function(x){return x.cat===e.cat;}).length;
-  var out=sum(me);
-  var budget=S.settings.budget||0;
-  var now=new Date();
-  var dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();
-  var leftDays=Math.max(1,dim-now.getDate()+1);
-  var left=budget-out;
-  var daily=left/leftDays;
-  var h=now.getHours();
-  var n=todayN();
-
-  if(e.income){
-    return pick(["进账 "+money(e.amount)+"，钱包回血 💰","收到 "+money(e.amount)+"，记上了～","这笔是收入，不是花出去的 🙂","本月收入 +"+money(e.amount)+"，不错"]);
+  var out=sum(me),budget=S.settings.budget||0,left=budget-out;
+  /* 1) 分类是猜的 —— 必须告诉用户，否则记错了他不知道 */
+  if(e.conf&&e.conf<0.7)return "没听出是什么，先记成「"+e.cat+"」，点卡片能改";
+  /* 2) 本月第一次超支 —— 说一次，不重复念 */
+  if(budget>0&&left<0){
+    var d=new Date(),mk=d.getFullYear()+"-"+(d.getMonth()+1);
+    if(S.oversaid!==mk){S.oversaid=mk;return "这个月超了 "+money(-left);}
   }
-  /* 特殊条件台词（优先级高） */
-  var hot=[],cold=[];
-  if(e.conf&&e.conf<0.7)hot.push("没太看懂分类，先记成「"+e.cat+"」了，点气泡能改");
-  if(left<0)hot.push("本月已经超了 "+money(left)+"，我不说风凉话了 😐","超支 "+money(left)+"，这月还剩 "+leftDays+" 天…","预算破了，接下来只能看着办了 😶");
-  else if(daily<15)hot.push("日均只剩 "+money(daily)+"，还有 "+leftDays+" 天，悠着点","这么花下去月底要吃土");
-  else if(daily>200)hot.push("日均还有 "+money(daily)+" 可花，今天挺松");
-  if(e.amount>=200)hot.push(money(e.amount)+"……这笔不小 😳");
-  else if(e.amount>=100)hot.push("又是三位数，记上了");
-  if(e.amount<=5)hot.push("才 "+money(e.amount)+"，很克制 👍");
-  if(catN>=5)hot.push("这个月第 "+catN+" 次「"+e.cat+"」了 "+e.emoji+" 有点上头","「"+e.cat+"」第 "+catN+" 次，我没数错吧");
-  else if(catN===3)hot.push("「"+e.cat+"」这个月第 3 次了 "+e.emoji);
-  var dk=new Date().toDateString();
-  if((h>=23||h<5)&&S.nightSaid!==dk){hot.push("这个点还在花钱，夜猫子 🌙");S.nightSaid=dk;}
-  else if(h<9&&e.cat==="早餐")hot.push("早饭吃了 "+money(e.amount)+"，今天开局不错");
-  if(n>0)cold.push("记好了 ✓ 今天 "+n+" 笔 · "+money(todayOut()));
-  cold.push("已记 ✓ 本月花掉 "+money(out),"嗯，"+e.cat+" "+money(e.amount)+"，收到",
-    e.emoji+" "+e.cat+" 收到","好，"+money(e.amount)+" 记下了","收到 "+e.cat+" "+money(e.amount),
-    e.cat+" "+money(e.amount)+" ✓","嗯嗯，记上了");
-  return pickMix(hot,cold);}
+  return "";
+}
 /* ---------- 渲染 ---------- */
 function money(v){var n=Math.abs(v);var s=n>=1000?n.toFixed(0):n.toFixed(2);s=s.replace(/\.00$/,"").replace(/(\.\d)0$/,"$1");return "¥"+s;}
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
@@ -448,6 +410,7 @@ function openSettings(){
   panel.innerHTML=h;sheet.classList.add("on");
   panel.querySelector("#setClose").onclick=closeSheet;
   panel.querySelector("#fSave").onclick=function(){
+    var aiBefore=JSON.stringify(aiCfg());
     S.settings.budget=parseFloat(panel.querySelector("#fBudget").value)||0;
     S.settings.name=panel.querySelector("#fName").value||"小账";
     S.settings.avatar=panel.querySelector("#fAvatar").value||"🐱";
@@ -455,9 +418,10 @@ function openSettings(){
     S.settings.aiKey=panel.querySelector("#fAiKey").value.trim();
     S.settings.aiModel=panel.querySelector("#fAiModel").value.trim();
     save();render();closeSheet();
-    S.msgs.push({id:uid(),ts:Date.now(),from:"bot",type:"text",
-      text:aiOn()?"接上了，之后我用模型回你（花的钱你自己账号出）。":"已切回本地台词，零成本。"});
-    save();render();};
+    if(aiBefore!==JSON.stringify(aiCfg())){
+      S.msgs.push({id:uid(),ts:Date.now(),from:"bot",type:"text",text:aiOn()?"已连上模型":"已用回本地"});
+      save();render();
+    }};
   panel.querySelector("#fExport").onclick=function(){
     var blob=new Blob([JSON.stringify(S,null,1)],{type:"application/json"});
     var a=document.createElement("a");a.href=URL.createObjectURL(blob);
