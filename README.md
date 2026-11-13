@@ -41,7 +41,9 @@ chat-ledger/
 ├── 方案B-微信小程序与真人对话.md
 ├── shot-*.png            截图（390×844 实机比例）
 ├── serve.cmd             双击 = 局域网起服务，iPhone 同 WiFi 直接试玩
-├── push.cmd / push.ps1   双击 = 一键建仓库 + 推送 + 开 GitHub Pages
+├── push.cmd / push.ps1   双击 = 一键建仓库 + 推送 + 开 GitHub Pages（要 gh 已登录）
+├── push-git.cmd          双击 = 纯 git 推送，只问你要一个 PAT，不装任何东西
+├── proxy-on.cmd          双击 = 只给本仓库挂 127.0.0.1:7890 代理
 ├── .github/workflows/pages.yml   GitHub Actions 自动发布
 ├── .nojekyll             告诉 Pages 别跑 Jekyll 处理
 ├── LICENSE               MIT
@@ -75,6 +77,10 @@ iPhone 连同一个 WiFi，用 **Safari** 打开这个地址，就能用。
 
 > **2FA 没弄好也能先跳过**：脚本会停在「未登录」那一步，什么都不改。等 2FA 弄完再双击一次即可，之前的工作不会浪费。
 > 脚本里写死了代理 `http://127.0.0.1:7890`（本机 github.com 直连超时，必须走代理）。没有代理就把 `$PROXY` 改成空字符串。
+>
+> **不想装 gh？** 用 `push-git.cmd`：先在网页上建好空仓库，再生成一个勾了 `repo` + `workflow` 的 PAT，双击脚本粘进去就行。
+>
+> **2FA 怎么弄**：这台机器的情况是「短信不可用（GitHub 的短信支持国家里没有中国）、Passkey 不可用（无 TPM / 无 Windows Hello）」，只能走 TOTP。离线验证码器和完整步骤在隔壁目录 `F:\pcl\2fa-tool\`（那里有 `totp.html` 双击即用 + `README.md` 手册）。
 
 跑完后等 1～2 分钟，Actions 变绿，访问 `https://<用户名>.github.io/chat-ledger/`。
 
