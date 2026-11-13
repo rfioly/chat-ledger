@@ -11,18 +11,22 @@
 | 功能 | 说明 |
 |---|---|
 | 一句话记账 | 输入「午饭12」「奶茶十五」「昨天打车38」「早饭八块五」，自动认金额 + 认分类 |
-| 聊天流 UI | 你的话是右边的粉色气泡，账目是左边角色发来的卡片，气泡点开可「修改分类 / 删除」 |
+| 一句话多笔 | 「午饭12，奶茶15，地铁4」一次落三条账 |
+| 聊天流 UI | 你的话是右边的粉色气泡，账目是左边角色发来的卡片，气泡点开可「修改分类 / 改金额 / 删除」 |
+| 按天分组 | 每条日期条一个块：「今天 花 ¥67」「昨天 花 ¥121 · 收 ¥8000」；点日期条可折叠整天 |
 | 角色台词 | 默认沉默，只出账单卡片。仅三种情况说一句：分类没认出来、本月第一次超支、每类满第 10 笔。有「对方正在输入…」 |
 | 预算条 | 一行：本月花多少 / 剩多少 · 日均多少；超支变红。点它打开统计 |
-| 统计 | 按月分类排行 + 最近 14 天柱状图 |
+| 统计 | 总支出 / 总收入 / 结余 + 按分类排行 + **每天账单**（倒序，点某天展开当天每一笔） |
 | 离线可用 | Service Worker 缓存，断网也能记 |
-| 数据自持 | 只写 localStorage，可导出/导入 JSON 备份，无账号、无上传 |
+| 数据自持 | 只写 localStorage，可导出/导入 JSON、导出 CSV，无账号、无上传 |
+| 防丢 | 每天首次打开自动留一份快照（`chatledger.v2.bakday`）；超 15 笔未导出、或距上次导出超 30 天，预算条右侧提示「该备份了」 |
+| 撤销 | 删除后 4 秒内点提示条可撤回 |
 | 快捷入口 | `?add=午饭12` 直接入账，可接 iOS 快捷指令 / 分享菜单 |
 | 可选接大模型 | 设置 → 进阶里填任意 OpenAI 兼容接口（DeepSeek 等），角色台词换成本人化生成；不填就是纯本地零成本 |
 
-![主页](shot-1-home.png)
-![空态](shot-2-empty.png)
-![统计](shot-3-stats.png)
+![主页 · 按天分组](shot-1-home.png)
+![折叠一整天](shot-6-days.png)
+![统计 · 每天账单](shot-3-stats.png)
 
 ---
 
@@ -180,8 +184,9 @@ iPhone 连同一个 WiFi，用 **Safari** 打开这个地址，就能用。
 ## 六、给开发者的话
 
 - 无构建、无依赖、无框架。改完直接刷新。
-- 数据结构：`localStorage["chatledger.v2"] = { settings:{budget,name,avatar,aiUrl,aiKey,aiModel}, entries:[], msgs:[], seeded, lastOpen }`。
-- 解析入口 `parse(text)`；台词入口 `reply(entry)`；记账 `addEntry(parsed)`；渲染 `render()`。
+- 数据结构：`localStorage["chatledger.v2"] = { settings:{budget,name,avatar,aiUrl,aiKey,aiModel}, entries:[{id,ts,amount,cat,emoji,income,conf,note}], msgs:[{id,ts,from,type,text|entryId}], seeded, lastOpen, snapDay, lastExport }`。
+- 按天分组靠三个纯函数：`dk(ts)` 出 `"Y-M-D"` 当分组键、`dayTotals(list)` 归并成 `{out,inc,n}`、`dayHeadHtml(k,o)` 出日期条；折叠状态在内存对象 `_fold[k]` 里，不落盘（刷新后全展开）。
+- 解析入口 `parse(text)`（单句）与 `parseAll(text)`（按 `，。；、\n` 切多句，任一句没金额就跳过）；记账 `addBatch(list, rawText)`；台词入口 `reply(entry)`；渲染 `render()`；统计 `openStats()`。
 - 台词走「静默优先」：`reply(entry)` 绝大多数情况返回空字符串，于是 `addEntry` 不出打字动画、不推文本气泡，只落一张账单卡片。只有三种情况返回非空：`conf<0.7`（分类是猜的）、本月首次 `left<0`（用 `S.oversaid` 记录当月只说一次）、同类第 10 笔。要加台词就往 `reply()` 里加 return 分支。
 - 加分类只需往 `CATS` 里加 `{k,e,ws:[]}`；`income:true` 表示收入类。
 - 改完 `sw.js` 里的 `CACHE = 'chatledger-vN'` 版本号，否则手机上的旧缓存不会更新。
@@ -191,5 +196,6 @@ iPhone 连同一个 WiFi，用 **Safari** 打开这个地址，就能用。
 ## 七、边界
 
 - 数据只在本机浏览器，**清缓存/删 App 就没了**，定期用「导出备份」。
-- 没有多设备同步、没有多账本、没有账目编辑金额（只能改分类/删除，需要重记）。
+- 没有多设备同步、没有多账本。金额可以改（点账单卡片 → 改金额），但改不了日期。
+- 「午饭12和奶茶15」这种用「和」连起来的句子只会记第一笔（`和` 不在分隔符里，刻意保守，避免把描述里的字当新账）。
 - 台词数少是刻意的：记账是高频动作，每次都评价会烦。想换真人感就在设置里接自己的模型，本地只保留「非说不可」的三条。
