@@ -39,40 +39,104 @@ chat-ledger/
 ├── apple-touch-icon.png  iOS 主屏幕图标（180×180）
 ├── README.md             本文件
 ├── 方案B-微信小程序与真人对话.md
-└── shot-*.png            截图（390×844 实机比例）
+├── shot-*.png            截图（390×844 实机比例）
+├── serve.cmd             双击 = 局域网起服务，iPhone 同 WiFi 直接试玩
+├── push.cmd / push.ps1   双击 = 一键建仓库 + 推送 + 开 GitHub Pages
+├── .github/workflows/pages.yml   GitHub Actions 自动发布
+├── .nojekyll             告诉 Pages 别跑 Jekyll 处理
+├── LICENSE               MIT
+└── .gitignore / .gitattributes
 ```
+
+> 仓库已经初始化好，首次提交也做完了（`git log` 能看到）。剩下只差 GitHub 那边的授权。
 
 ---
 
-## 三、装到 iPhone 上（三种，从快到正式）
+## 三、装到 iPhone 上
 
-### 方案 A：GitHub Pages —— 最推荐，5 分钟，永久免费
+### 方案 0：现在就能用（不用 GitHub）
 
-1. 注册/登录 GitHub，新建仓库（Public），比如 `chat-ledger`。
-2. 把本目录里**除 shot-*.png 外**的文件全部上传到仓库根目录（网页上拖拽即可，不用装 git）。
-3. 仓库 → Settings → Pages → Source 选 `Deploy from a branch`，Branch 选 `main` / `(root)`，Save。
-4. 等 1 分钟，访问 `https://<你的用户名>.github.io/chat-ledger/`。
-5. iPhone **必须用 Safari** 打开这个网址 → 底部「分享」→「添加到主屏幕」→ 命名「聊记」→ 添加。
-6. 从主屏幕图标点开，就是全屏无地址栏的 App，断网可用。
+双击本目录里的 **`serve.cmd`**，黑窗口会打印出形如 `http://192.168.1.20:8080` 的地址（可能有好几个，选以 192.168 或 10 开头的那个）。
 
-> 只有 Safari 的「添加到主屏幕」会生成独立窗口 + 使用 `manifest.json` 的名字和图标；微信内置浏览器、Chrome iOS 都不行。
+iPhone 连同一个 WiFi，用 **Safari** 打开这个地址，就能用。
 
-### 方案 B：Cloudflare Pages —— 同样免费，可绑自己域名
+> 缺点：不是 https，iOS 不会给「添加到主屏幕」的完整体验（图标能用、全屏能用，但 Service Worker 不注册、离线不生效）。用来验收 UI 足够。
+> 关掉黑窗口＝停止服务。
+
+### 方案 A：GitHub Pages —— 推荐，一次性，之后永久在线
+
+仓库已经初始化好了（`git init` 过了，首次提交也有了），只差最后「建仓库 + 推送 + 开 Pages」这三步，全在一个脚本里：
+
+1. 装 GitHub CLI（若还没装）：`winget install GitHub.cli`
+2. 登录：`gh auth login -h github.com -p https -w` —— 在浏览器里过完 2FA，终端就拿到凭据了。
+3. 双击 **`push.cmd`**（或 `powershell -ExecutionPolicy Bypass -File .\push.ps1`）。
+
+脚本会依次做：检查登录 → 创建 `<用户名>/chat-ledger` 公开仓库 → 推送 `main` → 打开 Pages（Actions 模式）→ 打印最终地址。
+
+> **2FA 没弄好也能先跳过**：脚本会停在「未登录」那一步，什么都不改。等 2FA 弄完再双击一次即可，之前的工作不会浪费。
+> 脚本里写死了代理 `http://127.0.0.1:7890`（本机 github.com 直连超时，必须走代理）。没有代理就把 `$PROXY` 改成空字符串。
+
+跑完后等 1～2 分钟，Actions 变绿，访问 `https://<用户名>.github.io/chat-ledger/`。
+
+4. **iPhone 必须用 Safari** 打开这个地址 → 底部「分享」→「添加到主屏幕」→ 命名「聊记」→ 添加。
+5. 从主屏幕图标点开，就是全屏无地址栏的 App，断网可用。
+
+> 只有 Safari 的「添加到主屏幕」会生成独立窗口 + 使用 `manifest.json` 的名字和图标；微信内置浏览器、Chrome iOS、Edge iOS 都不行。
+
+### 方案 B：手动拖文件（不想装 gh 也行）
+
+1. 浏览器打开 GitHub（挂代理），新建仓库 `chat-ledger`，**Public**。
+2. 把本目录所有文件（含 `.github/`、`.nojekyll`；`.git/` 不用管）拖进网页上传。
+3. Settings → Pages → Source 选 **GitHub Actions**（仓库里已带 `.github/workflows/pages.yml`，推上去就会自动构建）。
+   - 想用分支模式也行：Source 选 `Deploy from a branch` → `main` / `(root)`。
+4. 剩下的同方案 A 第 4、5 步。
+
+### 方案 C：Cloudflare Pages —— 同样免费，可绑自己域名
 
 1. 登录 Cloudflare → Workers & Pages → Create → Pages → Upload assets。
 2. 把整个目录拖进去 → Deploy。得到 `https://xxx.pages.dev`。
-3. 剩下同方案 A 第 5、6 步。
+3. 剩下同方案 A 第 4、5 步。
 
-### 方案 C：只在同一 WiFi 下试玩（不发布）
+### 网络：这台机器上实测的结果
 
-电脑上（已装 Python）在本目录执行：
+| 站点 | 直连 | 走 `127.0.0.1:7890` |
+|---|---|---|
+| github.com | ❌ 超时 | ✅ 200 |
+| api.github.com | ✅ 200 | ✅ |
+| vercel.com / app.netlify.com | ❌ 超时 | ✅ |
+| dash.cloudflare.com | ❌ 超时 | ⚠️ 403（CF 挡了代理出口 IP，换节点再试） |
+| gitee.com | ✅ 200 | ✅ |
 
-```bash
-python -m http.server 8080
-```
+结论：**做 GitHub 相关的事必须挂代理**，`push.ps1` 里已经写死了。REST API 直连能用，所以即便网页打不开，也能用 `curl` + Personal Access Token 建仓库（见下）。
 
-查电脑局域网 IP（`ipconfig` 里的 IPv4，例如 192.168.1.20），iPhone Safari 打开 `http://192.168.1.20:8080`。
-缺点：不是 https，iOS 不会给你「添加到主屏幕」的完整体验，Service Worker 也不启用（离线失效）。只适合验收 UI。
+### 网页版 GitHub 打不开时的备用通道
+
+**用 API 建仓库（不需要打开网页）**
+
+1. 打开 `https://github.com/settings/tokens`（打不开就先挂代理）→ Generate new token (classic) → 勾 `repo` + `workflow` → 生成。
+2. 在本目录执行：
+
+   ```bash
+   curl -x http://127.0.0.1:7890 -H "Authorization: Bearer ghp_你的token" \
+        -H "Accept: application/vnd.github+json" \
+        -d '{"name":"chat-ledger","private":false}' \
+        https://api.github.com/user/repos
+   ```
+
+3. 然后 `git push -u origin main`（token 当密码：用户名填 `rfioly`，密码粘贴 token）。
+4. 开 Pages 也是一条 API：
+
+   ```bash
+   curl -x http://127.0.0.1:7890 -X POST -H "Authorization: Bearer ghp_你的token" \
+        -H "Accept: application/vnd.github+json" \
+        -d '{"build_type":"workflow"}' \
+        https://api.github.com/repos/rfioly/chat-ledger/pages
+   ```
+
+**Gitee 镜像（国内直连，不挂代理）**
+
+`gitee.com` 直连 ✅ 200，当**代码备份**很稳：建仓库 → `git remote add gitee https://gitee.com/<用户名>/chat-ledger.git` → `git push gitee main`。
+当**发布渠道**就别指望了：Gitee Pages 免费版要实名认证 + 仓库人工审核，且每次更新得手动点「更新部署」，历史上还多次停服调整。**发布认准 GitHub Pages。**
 
 ---
 
