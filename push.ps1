@@ -1,4 +1,4 @@
-<#
+﻿<#
   聊记 · 一键发布到 GitHub Pages
   用法：在本目录右键 → 在此处打开 PowerShell，然后运行
         powershell -ExecutionPolicy Bypass -File .\push.ps1

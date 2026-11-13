@@ -1,4 +1,7 @@
 * text=auto eol=lf
+# cmd.exe 按 ANSI 代码页 + CRLF 解析批处理；LF-only 的中文会被切坏，必须钉死
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
 *.png binary
 *.jpg binary
 *.ico binary

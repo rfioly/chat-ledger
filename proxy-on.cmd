@@ -1,11 +1,11 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 cd /d "%~dp0"
-echo   ç»™ã€Œæœ¬ä»“åº“ã€æŒ‚ä»£ç†ï¼ˆClash é»˜è®¤ 127.0.0.1:7890ï¼‰ã€‚åªæ”¹è¿™ä¸ªä»“åº“ï¼Œä¸åŠ¨å…¨å±€ã€‚
+echo   ¸ø¡¸±¾²Ö¿â¡¹¹Ò´úÀí£¨Clash Ä¬ÈÏ 127.0.0.1:7890£©¡£Ö»¸ÄÕâ¸ö²Ö¿â£¬²»¶¯È«¾Ö¡£
 git config http.proxy http://127.0.0.1:7890
 echo.
-echo   å½“å‰å€¼ï¼š
+echo   µ±Ç°Öµ£º
 git config --get http.proxy
 echo.
-echo   æ’¤é”€ï¼š git config --unset http.proxy
+echo   ³·Ïú£º git config --unset http.proxy
 pause

@@ -1,20 +1,20 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 cd /d "%~dp0"
 echo.
-echo   Âè™ÂÅö„ÄåÊé®ÈÄÅÂ∑≤ÊúâÊèê‰∫§„Äç„ÄÇÂâçÊèêÔºöGitHub ÁΩëÈ°µ‰∏äÂ∑≤Âª∫Â•Ω chat-ledger ‰ªìÂ∫ìÔºàPublicÔºâ„ÄÇ
-echo   ÁΩëÈ°µÊâì‰∏çÂºÄÔºüÂÖàÂèåÂáª proxy-on.cmdÔºåÊàñÂú® Clash ÈáåÂºÄÂÖ®Â±Ä„ÄÇ
+echo   ÷ª◊ˆ°∏Õ∆ÀÕ“—”–Ã·Ωª°π°£«∞Ã·£∫GitHub Õ¯“≥…œ“—Ω®∫√ chat-ledger ≤÷ø‚£®Public£©°£
+echo   Õ¯“≥¥Ú≤ªø™£øœ»À´ª˜ proxy-on.cmd£¨ªÚ‘⁄ Clash ¿Ôø™»´æ÷°£
 echo.
-set /p TOKEN=Á≤òË¥¥ GitHub Personal Access Token: 
+set /p TOKEN=’≥Ã˘ GitHub Personal Access Token: 
 if "%TOKEN%"=="" goto :eof
 git -c http.proxy=http://127.0.0.1:7890 push "https://rfioly:%TOKEN%@github.com/rfioly/chat-ledger.git" main:main
 if errorlevel 1 (
   echo.
-  echo   Êé®ÈÄÅÂ§±Ë¥•„ÄÇÊ£ÄÊü•Ôºö‰ªìÂ∫ìÂª∫‰∫ÜÊ≤° / token ÊúâÊ≤°Êúâ repo ÊùÉÈôê / ‰ª£ÁêÜÂºÄÊ≤°ÂºÄ„ÄÇ
+  echo   Õ∆ÀÕ ß∞‹°£ºÏ≤È£∫≤÷ø‚Ω®¡À√ª / token ”–√ª”– repo »®œﬁ / ¥˙¿Ìø™√ªø™°£
 ) else (
   echo.
-  echo   Êé®ÈÄÅÊàêÂäü„ÄÇÂéª‰ªìÂ∫ì Settings -^> Pages -^> Source ÈÄâ GitHub Actions„ÄÇ
-  echo   Á≠â 1-2 ÂàÜÈíüÔºöhttps://rfioly.github.io/chat-ledger/
+  echo   Õ∆ÀÕ≥…π¶°£»•≤÷ø‚ Settings -^> Pages -^> Source —° GitHub Actions°£
+  echo   µ» 1-2 ∑÷÷”£∫https://rfioly.github.io/chat-ledger/
 )
 set TOKEN=
 pause

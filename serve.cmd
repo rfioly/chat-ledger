@@ -1,15 +1,15 @@
 @echo off
-chcp 65001 >nul
+chcp 936 >nul
 cd /d "%~dp0"
 echo.
-echo   å±€åŸŸç½‘ç‚¹å¼€è¿™ä¸ª Appï¼ˆä¸éœ€è¦ GitHubã€ä¸éœ€è¦å¤–ç½‘ï¼‰:
+echo   ¾ÖÓòÍøµã¿ªÕâ¸ö App£¨²»ÐèÒª GitHub¡¢²»ÐèÒªÍâÍø£©:
 for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4"') do (
   for /f "tokens=* delims= " %%b in ("%%a") do echo        http://%%b:8080
 )
 echo.
-echo   iPhone ç”¨ Safari æ‰“å¼€ä¸Šé¢ä»»ä¸€åœ°å€å³å¯è¯•çŽ©ã€‚
-echo   æ³¨æ„ï¼šhttp ä¸æ˜¯ httpsï¼ŒiOS ä¸ä¼šç»™"æ·»åŠ åˆ°ä¸»å±å¹•"çš„å®Œæ•´ä½“éªŒï¼Œç¦»çº¿ç¼“å­˜ä¹Ÿä¸å¯ç”¨ã€‚
-echo   å…³æŽ‰è¿™ä¸ªé»‘çª—å£ = åœæ­¢æœåŠ¡ã€‚
+echo   iPhone ÓÃ Safari ´ò¿ªÉÏÃæÈÎÒ»µØÖ·¼´¿ÉÊÔÍæ¡£
+echo   ×¢Òâ£ºhttp ²»ÊÇ https£¬iOS ²»»á¸ø"Ìí¼Óµ½Ö÷ÆÁÄ»"µÄÍêÕûÌåÑé£¬ÀëÏß»º´æÒ²²»ÆôÓÃ¡£
+echo   ¹ØµôÕâ¸öºÚ´°¿Ú = Í£Ö¹·þÎñ¡£
 echo.
 python -m http.server 8080
 pause
