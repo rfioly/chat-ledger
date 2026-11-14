@@ -69,6 +69,10 @@ footer{background:var(--card);border-top:1px solid var(--line);padding:8px 10px 
 .chips::-webkit-scrollbar{display:none}
 .chips button{flex:0 0 auto;background:var(--bg);border:1px solid var(--line);color:var(--sub);border-radius:14px;padding:5px 11px;font-size:12.5px;cursor:pointer}
 .chips button:active{background:var(--line)}
+.peek{display:none;font-size:11.5px;color:var(--sub);padding:0 4px 6px;line-height:1.45;overflow:hidden;word-break:break-all}
+.peek.on{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.peek b{color:var(--text);font-weight:600}
+.peek .w{color:var(--accent)}
 .inrow{display:flex;gap:8px;align-items:center}
 .inrow input{flex:1;min-width:0;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:18px;padding:9px 14px;font-size:15px;outline:none}
 .inrow input:focus{border-color:var(--accent)}
@@ -172,6 +176,7 @@ header button.dot::after{content:"";position:absolute;top:7px;right:7px;width:6p
   </div>
   <main id="stream"></main>
   <footer>
+    <div class="peek" id="peek"></div>
     <div class="chips" id="chips"></div>
     <div class="inrow">
       <button class="dbtn" id="btnDay" aria-label="选择记账日期">今</button>
@@ -225,35 +230,100 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 /* ---------- 解析 ---------- */
 var CN={零:0,〇:0,一:1,二:2,两:2,三:3,四:4,五:5,六:6,七:7,八:8,九:9};
 var UNIT={十:10,百:100,千:1000};
-function cn2num(s){var t=0,sec=0,n=0;for(var i=0;i<s.length;i++){var c=s[i];
-  if(CN[c]!==undefined){n=CN[c];}
-  else if(UNIT[c]!==undefined){if(n===0)n=1;sec+=n*UNIT[c];n=0;}
-  else if(c==="万"){sec+=n;t+=sec*10000;sec=0;n=0;}}
-  return t+sec+n;}
+/* 中文数字：「两百三」=230、「一千二」=1200（末位数字按上一个单位降一位） */
+function cn2num(s){
+  var t=0,sec=0,n=0,lastUnit=0;
+  for(var i=0;i<s.length;i++){
+    var c=s[i];
+    if(CN[c]!==undefined){n=CN[c];continue;}
+    if(UNIT[c]!==undefined){if(n===0)n=1;sec+=n*UNIT[c];lastUnit=UNIT[c];n=0;continue;}
+    if(c==="万"){sec+=n;t+=sec*10000;sec=0;n=0;lastUnit=0;continue;}
+  }
+  if(n>0&&lastUnit>=100)sec+=n*lastUnit/10;else sec+=n;
+  return t+sec;
+}
 function pickAmount(text,catHit){
+  /* 「35块5」「12块5毛」：块/元后面跟的那一位是角（不走下面的整数分支） */
+  var jm=text.match(/([0-9]+(?:\.[0-9]{1,2})?)\s*(?:块钱|块|元)\s*([0-9一二三四五六七八九])(?![0-9一二三四五六七八九十百千万])/);
+  if(jm){
+    var b0=parseFloat(jm[1]);
+    var j0=CN[jm[2]]!==undefined?CN[jm[2]]:+jm[2];
+    if(b0>0&&j0>0&&j0<10)return Math.round((b0+j0/10)*100)/100;
+  }
   var a=text.match(/[0-9]+(?:\.[0-9]{1,2})?/);
   if(a){var v=parseFloat(a[0]);return isFinite(v)&&v>0?v:null;}
   var m=text.match(/[零〇一二两三四五六七八九十百千]+/);
   if(m){
     var base=cn2num(m[0]);
     if(!(base>0))return null;
-    var hasUnit=/(?:块钱|块|元|RMB|¥)/.test(text);
+    var hasUnit=/(?:块钱|块|元|RMB|¥|￥)/.test(text);
     if(!hasUnit&&!catHit)return null;
-    var jiao=text.match(/(?:块钱|块|元)\s*([一二三四五六七八九])(?:\s*(?:角|毛))?/);
-    if(jiao){base+=CN[jiao[1]]/10;}
-    return base;
+    /* 「35块5」「三块五」：块/元后面跟的那一位是角 */
+    var jiao=text.match(/(?:块钱|块|元)\s*([0-9一二三四五六七八九])\s*(?:角|毛)?(?![\d一二三四五六七八九十百千])/);
+    if(jiao){var jc=CN[jiao[1]]!==undefined?CN[jiao[1]]:+jiao[1];base+=jc/10;}
+    return Math.round(base*100)/100;
   }
   return null;}
-function pickCat(text){
-  for(var i=0;i<CATS.length;i++){var c=CATS[i];
-    for(var j=0;j<c.ws.length;j++){if(text.indexOf(c.ws[j])>-1)return{c:c,hit:c.ws[j],conf:0.9};}}
-  /* 没命中关键词：只有「几乎就是个金额」时才按时段猜，带实义字的（如「平板保护壳」）一律记成「其他」 */
-  var rest=text
+/* ---------- 分类词库 ---------- */
+/* 二级词表：只在这里加词，主表不用动 */
+var EXTRA={
+ "早餐":["粥","白粥","小米粥","小笼包","烧麦","茶叶蛋","三明治","吐司","贝果","胡辣汤","肉夹馍","手抓饼","鸡蛋灌饼","饭团","紫米","热干面","小面","馄饨","云吞","豆腐脑","蒸饺","水饺","煎饺","油饼","糯米鸡","豆花","麦片","牛奶","酸奶杯"],
+ "午餐":["米饭","盖浇饭","煲仔饭","便当","套餐","自助","沙拉","轻食","寿司","刀削面","炸酱面","烩面","汉堡","披萨","意面","意粉","炒饭","炒面","盖饭","拌饭","米粉","河粉","米皮","凉皮","肉夹馍盖饭","关东煮","炸鸡","鸡排","鸡腿","牛肉面","鸡蛋面","汤面","拌面","卤面","粉丝汤","酸辣粉","麻辣拌"],
+ "晚餐":["串串","烤鱼","水煮鱼","酸菜鱼","烤串","烤肉","炒菜","家常菜","小炒","砂锅","铁锅炖","羊蝎子","涮肉","干锅","香锅","炸串","卤煮","鸭血","米线锅","麻辣拌","酸辣粉"],
+ "饮品":["美式","拿铁","摩卡","卡布奇诺","果茶","热可可","矿泉水","纯净水","苏打水","气泡水","饮料","汽水","冰红茶","绿茶","凉茶","椰子水","豆奶","啤酒","白酒","红酒","香槟","鸡尾酒","奶昔","沙冰","柠檬水","酸梅汤","养乐多","元气森林","东方树叶","奶茶杯"],
+ "零食":["素毛肚","毛肚","豆干","豆腐干","香干","辣条","鸭脖","鸭翅","鸭掌","鸡爪","卤味","卤蛋","卤藕","坚果","瓜子","花生","开心果","腰果","核桃","巴旦木","松子","夏威夷果","肉干","牛肉干","猪肉脯","果干","苹果干","芒果干","草莓干","蜜饯","话梅","陈皮梅","锅巴","海苔","膨化","虾条","薯条","爆米花","蛋挞","麻薯","鸡蛋仔","泡芙","曲奇","威化","果冻","软糖","硬糖","口香糖","棒棒糖","巧克力豆","酸奶","布丁","龟苓膏","冰淇淋球","葡萄","橘子","橙子","草莓","蓝莓","车厘子","芒果","梨","桃","猕猴桃","火龙果","柚子","菠萝","哈密瓜","柿子","荔枝","龙眼","榴莲","椰子","柠檬","牛油果","圣女果"],
+ "交通":["出租车","网约车","大巴","客车","船票","过路费","高速费","洗车","保养","违章","罚款","年检","停车费","油费","充电桩","共享单车","电动车充电","汽车","车票","机场","摆渡"],
+ "日用":["护发素","洗面奶","洗手液","牙刷","漱口水","柔顺剂","消毒液","湿巾","卫生纸","卷纸","洗洁精","保鲜膜","保鲜袋","一次性","蚊香","驱蚊","创可贴","口罩","体温计","水杯","保温杯","毛巾","浴巾","拖鞋","床单","被套","枕套","衣架","晾衣架","收纳箱","储物箱","电池","灯泡","暖风机","电风扇","空调被","雨伞","雨衣","垃圾袋","拖布","扫把","马桶","插座","插排","快递袋","抽纸","纸巾"],
+ "购物":["裤子","裙子","外套","羽绒服","卫衣","T恤","衬衫","袜子","内衣","内裤","帽子","围巾","手套","包包","背包","行李箱","首饰","项链","戒指","墨镜","口红","粉底","面膜","精华","防晒","香水","数码","充电宝","音箱","相机","镜头","内存卡","硬盘","路由器","玩具","手办","乐高","游戏机","按摩仪","剃须刀","吹风机","电饭煲","空气炸锅","锅具","餐具","床垫","桌子","椅子","柜子","沙发","窗帘","笔记本电脑","平板电脑","手机","手表带","鞋垫","书包","行李箱套"],
+ "居住":["住宿","物业费","保洁","维修","家电维修","装修","家具","押金","中介费","搬家","水电费","取暖费","停车位","车位"],
+ "通讯":["电话费","手机费","流量包","宽带费","电信","移动","联通","云盘","网盘","视频会员","音乐会员","爱奇艺","腾讯视频","优酷","Netflix","B站大会员","会员费","月租","话费"],
+ "娱乐":["手游","steam","电影票","话剧","展览","密室","剧本杀","棋牌","麻将","钓鱼","健身","游泳","羽毛球","台球","保龄球","滑雪","露营","景点","旅游","民宿","酒店","网吧","桌游吧","抽卡","氪金","演唱会票","展览票","公园","游乐园","KTV包间"],
+ "医疗":["买药","药店","诊所","牙科","口腔","配镜","针灸","推拿","按摩","正骨","化验","拍片","B超","门诊","住院","疫苗","牙套","补牙","洗牙","拔牙","退烧药","感冒药","维生素","眼药水"],
+ "学习":["图书","教材","课本","习题","辅导","补习","家教","考公","雅思","托福","四六级","论文","打印费","复印","中性笔","本子","kindle","墨水屏","考试报名","培训班","网课费"],
+ "人情":["压岁钱","份子钱","礼金","伴郎","伴娘","送礼","AA","还钱","借钱","红包封","喜糖","随礼金","给爸妈","转账给"],
+ "收入":["绩效","提成","分红","利息","理财","基金","股票","补贴","兼职","外快","稿费","返现","押金退","报销款","红包收","中奖"]
+};
+function catByName(k){for(var i=0;i<CATS.length;i++){if(CATS[i].k===k)return CATS[i];}return null;}
+function learnMap(){if(!S.learn)S.learn={};return S.learn;}
+/* 去掉金额、日期、时间词、口头虚词之后剩下的实义词 */
+function residual(text){
+  return String(text||"")
+    .replace(/^(\d{1,2})月(\d{1,2})[日号]?/,"")
+    .replace(/^(\d{1,2})[.\/\-](\d{1,2})[日号]?/,"")
+    .replace(/^(\d{1,2})[日号]/,"")
     .replace(/[0-9]+(?:\.[0-9]{1,2})?/g,"")
     .replace(/[零〇一二两三四五六七八九十百千万]+/g,"")
-    .replace(/块钱|块|元|角|毛|RMB|¥/g,"")
-    .replace(/昨天|前天|今早|今天|刚才|上午|下午|中午|早上|晚上|凌晨|夜里|夜宵|早餐时间/g,"")
-    .replace(/[\s,，。.!！?？、~～\-+\/]/g,"");
+    .replace(/块钱|块|元|角|毛|RMB|¥|￥/g,"")
+    .replace(/大前天|前天|昨天|今早|今天|刚才|上午|下午|中午|早上|晚上|凌晨|夜里|夜宵|早餐时间/g,"")
+    .replace(/[\s,，。.!！?？、~～\-+\/\u3000:：]/g,"")
+    .replace(/[了的个买我他她它们呢吧啊嘛哦呀是在给和加跟还]/g,"")
+    .trim();
+}
+function pickCat(text){
+  /* 1) 自学习：改过分类的词优先，最长匹配 */
+  var L=learnMap(),bw="",bk="";
+  for(var w in L){
+    if(!Object.prototype.hasOwnProperty.call(L,w))continue;
+    if(w.length>=2&&text.indexOf(w)>-1&&w.length>bw.length){bw=w;bk=L[w];}
+  }
+  if(bk){var lc=catByName(bk);if(lc)return{c:lc,hit:bw,conf:0.95};}
+  /* 2) 主词表（含分类名本身）+ 二级词表，最长匹配优先 */
+  var hit="",hc=null,hcf=0;
+  function scan(c,list,conf){
+    for(var j=0;j<list.length;j++){
+      var x=list[j];
+      if(!x)continue;
+      if(text.indexOf(x)>-1&&x.length>hit.length){hit=x;hc=c;hcf=conf;}
+    }
+  }
+  for(var i=0;i<CATS.length;i++){
+    var c=CATS[i];
+    scan(c,c.ws.concat([c.k]),0.9);
+    scan(c,EXTRA[c.k]||[],0.85);
+  }
+  if(hc)return{c:hc,hit:hit,conf:hcf};
+  /* 3) 没命中：剥完只剩金额才按时段猜，带实义字的一律记「其他」 */
+  var rest=residual(text);
   if(!rest.length){
     var h=new Date().getHours();
     if(h<5)return{c:CATS[2],hit:"amount",conf:0.6};
@@ -261,37 +331,98 @@ function pickCat(text){
     if(h<15)return{c:CATS[1],hit:"amount",conf:0.75};
     return{c:CATS[2],hit:"amount",conf:0.75};
   }
-  return{c:CATS[15],hit:null,conf:0.45};}
-function parse(text){
+  return{c:CATS[15],hit:null,conf:0.45};
+}
+/* 句首日期：「11.4」「11月4日」「11/4」「11-4」「4号」 */
+function datePrefix(t){
+  var m=t.match(/^(\d{1,2})月(\d{1,2})[日号]?\s*/),mo,d,len;
+  if(m){mo=+m[1];d=+m[2];len=m[0].length;}
+  else{
+    m=t.match(/^(\d{1,2})[.\/\-](\d{1,2})[日号]?\s*/);
+    if(m){mo=+m[1];d=+m[2];len=m[0].length;}
+  }
+  if(!m)return null;
+  if(!(mo>=1&&mo<=12&&d>=1&&d<=31))return null;
+  var now=new Date(),y=now.getFullYear();
+  var cand=new Date(y,mo-1,d,now.getHours(),now.getMinutes(),0);
+  if(cand.getMonth()!==mo-1||cand.getDate()!==d)return null;
+  var today0=new Date(now.getFullYear(),now.getMonth(),now.getDate()).getTime();
+  if(cand.getTime()-today0>86400000){
+    cand=new Date(y-1,mo-1,d,now.getHours(),now.getMinutes(),0);
+    if(cand.getMonth()!==mo-1||cand.getDate()!==d)return null;
+  }
+  return {ms:cand.getTime(),rest:t.slice(len).trim(),raw:t.slice(0,len).trim()};
+}
+function parse(text,dayMs){
   var pc=pickCat(text);
   var amount=pickAmount(text,!!pc.hit);
   if(!amount)return null;
   var ts=Date.now(),hasD=0;
-  if(text.indexOf("昨天")>-1){ts-=86400000;hasD=1;}
-  else if(text.indexOf("前天")>-1){ts-=172800000;hasD=1;}
+  if(dayMs){ts=dayMs;hasD=1;}
   else if(text.indexOf("大前天")>-1){ts-=259200000;hasD=1;}
+  else if(text.indexOf("前天")>-1){ts-=172800000;hasD=1;}
+  else if(text.indexOf("昨天")>-1){ts-=86400000;hasD=1;}
   var inc=pc.c.income||text.indexOf("收入")>-1||text.indexOf("+)")>-1;
-  return {amount:amount,cat:pc.c.k,emoji:pc.c.e,conf:pc.conf,ts:ts,hasD:hasD,income:!!inc,note:text.trim()};
+  return {amount:amount,cat:pc.c.k,emoji:pc.c.e,conf:pc.conf,ts:ts,hasD:hasD,income:!!inc,note:text.trim(),frag:text.trim(),hit:pc.hit||""};
 }
-/* 一句话多笔：只有「每一段都能独立解析出金额」时才拆，拆不动就退回整句 */
+/* 一句话多笔：先按标点切，再按空格切；纯分类词段给后面的裸金额当上下文 */
+function runAll(body,dayMs){
+  var segs=String(body||"").split(/[，,、;；+＋\n]+/).map(function(x){return x.trim();}).filter(Boolean);
+  if(segs.length>1){
+    var out=[],lastCat=null,lastEmoji=null;
+    for(var i=0;i<segs.length;i++){
+      var p=parse(segs[i],dayMs);
+      if(p){
+        if(lastCat&&!p.income&&(p.conf<=0.5||p.hit==="amount")){
+          p.cat=lastCat;p.emoji=lastEmoji;p.conf=0.72;p.inherited=1;
+        }
+        if(!p.income&&p.conf>=0.85){lastCat=p.cat;lastEmoji=p.emoji;}
+        out.push(p);
+      }else{
+        var pc2=pickCat(segs[i]);
+        if(pc2.hit&&pc2.conf>=0.85){lastCat=pc2.c.k;lastEmoji=pc2.c.e;}
+      }
+    }
+    if(out.length)return out;
+  }
+  var bySp=String(body||"").split(/\s+/).filter(Boolean);
+  if(bySp.length>1){
+    var o2=[],lc2=null,le2=null,okAll=true;
+    for(var j=0;j<bySp.length;j++){
+      var q=parse(bySp[j],dayMs);
+      if(!q){okAll=false;break;}
+      if(lc2&&!q.income&&(q.conf<=0.5||q.hit==="amount")){q.cat=lc2;q.emoji=le2;q.conf=0.72;q.inherited=1;}
+      if(!q.income&&q.conf>=0.85){lc2=q.cat;le2=q.emoji;}
+      o2.push(q);
+    }
+    if(okAll&&o2.length)return o2;
+  }
+  var one=parse(body,dayMs);
+  return one?[one]:[];
+}
 function parseAll(text){
   var t=String(text||"").trim();
   if(!t)return [];
-  var segs=t.split(/[，,、;；+＋\n]+/).map(function(x){return x.trim();}).filter(Boolean);
-  if(segs.length>1){
-    var out=segs.map(parse);
-    if(out.every(function(p){return p&&p.amount>0;}))return out;
-    var whole=parse(t);
-    return whole?[whole]:[];
+  /* 政策三：句首日期只在「没手动选过补记日期」时生效 */
+  var pre=(typeof _dayOff!=="undefined"&&_dayOff===0)?datePrefix(t):null;
+  if(pre){
+    var a=runAll(pre.rest,pre.ms);
+    if(a.length)return a;
+    var b=runAll(t,null);   /* 日期剥完没金额 → 把这串当金额重新解析 */
+    return b;
   }
-  var bySp=t.split(/\s+/).filter(Boolean);
-  if(bySp.length>1){
-    var o2=bySp.map(parse);
-    if(o2.every(function(p){return p&&p.amount>0;}))return o2;
-  }
-  var one=parse(t);
-  return one?[one]:[];
+  return runAll(t,null);
 }
+/* 用户手动改分类时记下来，下次同一个词直接命中 */
+function remember(e){
+  var w=residual(e.frag||e.note||"").replace(/\s+/g,"");
+  if(w.length<2||w.length>12)return "";
+  var L=learnMap();
+  if(L[w]===e.cat)return w;
+  L[w]=e.cat;S.learn=L;
+  return w;
+}
+
 /* ---------- 记账 ---------- */
 var TYPING_MS=520;
 function addEntry(p){ addBatch([p], p.note); }
@@ -314,7 +445,7 @@ function addBatch(list,rawText){
   save();render();
   var wantAI=aiOn();
   var local="";
-  for(var i=0;i<es.length;i++){var t=reply(es[i]);if(t){local=t;break;}}
+  var local=replyBatch(es);
   function push(txt){
     typing(false);
     es.forEach(function(e){S.msgs.push({id:uid(),ts:base+1,from:"bot",type:"entry",entryId:e.id});});
@@ -415,6 +546,22 @@ function sum(list){return list.reduce(function(a,e){return a+(e.income?-e.amount
 function sumIn(list){return list.reduce(function(a,e){return a+(e.income?e.amount:0);},0);}
 /* ---------- 角色台词 ---------- */
 /* 原则：记账只出账单卡片，不刷评价。只在用户真需要知道时才说一句。 */
+/* 一批记完只说一句话：猜不出分类的合并成一条，同一天同一个词不重复念 */
+function replyBatch(es){
+  var cost=es.filter(function(e){return !e.income;});
+  var bad=cost.filter(function(e){return e.conf&&e.conf<0.7;});
+  var mk=new Date(),today=mk.getFullYear()+"-"+(mk.getMonth()+1)+"-"+mk.getDate();
+  if(bad.length){
+    var key=today+"|"+bad.map(function(e){return e.cat;}).join(",");
+    if(S.confSaid!==key){
+      S.confSaid=key;
+      if(bad.length===1)return "没听出是什么，先记成「"+bad[0].cat+"」，点卡片能改";
+      var names=[];bad.forEach(function(e){if(names.indexOf(e.cat)<0)names.push(e.cat);});
+      return "这 "+bad.length+" 笔没认出来，先记成「"+names.join("」「")+"」，点卡片能改";
+    }
+  }
+  return reply(es[es.length-1]||{});
+}
 function reply(e){
   if(e.income)return "";
   var me=monthEntries().filter(function(x){return !x.income;});
@@ -594,7 +741,12 @@ function openCatPicker(id){
   h+="</div>";panel.innerHTML=h;sheet.classList.add("on");
   panel.querySelector("#cClose").onclick=function(){closeSheet();};
   panel.querySelectorAll(".grid button").forEach(function(b){
-    b.onclick=function(){e.cat=b.dataset.k;e.emoji=b.dataset.e;save();render();closeSheet();};});
+    b.onclick=function(){
+      e.cat=b.dataset.k;e.emoji=b.dataset.e;
+      var w=remember(e);
+      save();render();closeSheet();
+      if(w)toast("记住了：「"+w+"」以后算 "+e.cat);
+    };});
 }
 /* 改金额：弹层，回车直接保存 */
 function openAmtEdit(id){
@@ -978,6 +1130,7 @@ function syncDayBtn(){
   b.textContent=DAY_LBL[_dayOff]||(_dayOff+"日");
   b.className="dbtn"+(_dayOff?" on":"");
   b.title=_dayOff?("补记 "+(DAY_LBL[_dayOff]||_dayOff+"天前")):"记今天";
+  if(typeof renderPeek==="function")renderPeek();
 }
 function openDayPicker(){
   var opts=[[0,"今天"],[1,"昨天"],[2,"前天"],[3,"3 天前"],[4,"4 天前"],[5,"5 天前"],[6,"6 天前"]];
@@ -987,7 +1140,7 @@ function openDayPicker(){
     h+='<button data-off="'+o[0]+'" class="'+(_dayOff===o[0]?"sel":"")+'"><span>'+(o[0]===0?"📅":"🗓")+'</span><span>'+o[1]+'</span><span style="font-size:10px;opacity:.6">'+(d.getMonth()+1)+"/"+d.getDate()+'</span></button>';
   });
   h+="</div>";
-  h+='<div style="margin-top:14px;font-size:11.5px;color:var(--sub);line-height:1.6">选定之后再用底部输入框记账，这一笔就会落到那天。原话里写「昨天」「前天」也认，写得比按钮更准。</div>';
+  h+='<div style="margin-top:14px;font-size:11.5px;color:var(--sub);line-height:1.6">选定之后再用底部输入框记账，这一笔就会落到那天。原话里还能直接写日期：「11.4零食20」「11月4日午饭12」。写了「昨天」「前天」也认，比按钮优先。</div>';
   panel.innerHTML=h;sheet.classList.add("on");
   panel.querySelector("#dClose").onclick=function(){closeSheet();};
   panel.querySelectorAll(".grid button").forEach(function(b){
@@ -1001,7 +1154,7 @@ function openDayPicker(){
 /* ---------- 输入 ---------- */
 function submit(){
   var i=document.getElementById("inp");var t=i.value.trim();if(!t)return;
-  i.value="";
+  i.value="";renderPeek();
   var ps=parseAll(t);
   if(!ps.length){
     S.msgs.push({id:uid(),ts:Date.now(),from:"me",type:"text",text:t});
@@ -1021,8 +1174,59 @@ document.getElementById("btnDay").onclick=openDayPicker;
     i.addEventListener(k,function(){if(t){clearTimeout(t);t=0;}},{passive:true});});
   i.addEventListener("contextmenu",function(e){e.preventDefault();openDayPicker();});
 })();
+/* 发送前预演：把要记成什么先摆在输入框上方，看一眼不对就别发 */
+function peekDay(ts){
+  var d=new Date(ts),n=new Date();
+  var d0=new Date(n.getFullYear(),n.getMonth(),n.getDate()).getTime();
+  var t0=new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime();
+  var diff=Math.round((d0-t0)/86400000);
+  if(diff===0)return "今天";
+  if(diff===1)return "昨天";
+  if(diff===2)return "前天";
+  var s=(d.getMonth()+1)+"月"+d.getDate()+"日";
+  if(d.getFullYear()!==n.getFullYear())s=d.getFullYear()+"年"+s;
+  return s;
+}
+function peekAmt(v){return String(Math.round(v*100)/100);}
+function renderPeek(){
+  var box=document.getElementById("peek"),i=document.getElementById("inp");
+  if(!box||!i)return;
+  var t=(i.value||"").trim();
+  if(!t){box.className="peek";box.innerHTML="";return;}
+  var ps;
+  try{ps=parseAll(t);}catch(e){ps=[];}
+  if(!ps.length){
+    if(/[0-9零一二三四五六七八九十两]/.test(t)){box.className="peek on";box.innerHTML='<span class="w">没听出金额</span>，试试「午饭12」';}
+    else{box.className="peek";box.innerHTML="";}
+    return;
+  }
+  box.className="peek on";
+  var html;
+  if(ps.length===1){
+    var p=ps[0];
+    html="<b>"+esc(peekDay(p.ts)+" · "+p.cat+" "+(p.income?"+":"")+"¥"+peekAmt(p.amount))+"</b>";
+  }else{
+    var days={};ps.forEach(function(p){days[peekDay(p.ts)]=1;});
+    var sameDay=Object.keys(days).length===1;
+    var body=ps.map(function(p){
+      var a=(p.income?"+":"")+peekAmt(p.amount);
+      return sameDay?(esc(p.cat)+" "+a):(esc(peekDay(p.ts)+" "+p.cat+" "+a));
+    }).join("、");
+    html='<span class="w">记 '+ps.length+' 笔</span> · '+(sameDay?esc(Object.keys(days)[0])+" · ":"")+body;
+  }
+  box.innerHTML=html;
+}
 var CHIPS=["午饭12","奶茶15","地铁4","打车23","超市68","工资8000"];
 document.getElementById("chips").innerHTML=CHIPS.map(function(c){return "<button>"+c+"</button>";}).join("");
+(function(){
+  var i=document.getElementById("inp");
+  i.addEventListener("input",renderPeek);
+  i.addEventListener("change",renderPeek);
+  i.addEventListener("focus",renderPeek);
+  i.addEventListener("blur",function(){setTimeout(function(){
+    var b=document.getElementById("peek");if(b&&!i.value.trim()){b.className="peek";b.innerHTML="";}
+  },120);});
+})();
 document.getElementById("chips").addEventListener("click",function(e){
   if(e.target.tagName!=="BUTTON")return;
   document.getElementById("inp").value=e.target.textContent;submit();});
